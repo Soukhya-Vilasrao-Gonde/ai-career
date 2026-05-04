@@ -12,9 +12,8 @@ if (!process.env.GEMINI_API_KEY) {
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 // Use latest stable model
-const model = genAI.getGenerativeModel({
-  model: "gemini-1.5-flash-latest",
-});
+
+const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
 
 // Utility: safely extract JSON from Gemini response
 function extractJSON(text) {

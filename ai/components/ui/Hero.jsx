@@ -3,6 +3,7 @@ import React, { useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { Button } from './button'
 import Image from 'next/image'
+import { SignInButton, SignedIn, SignedOut } from '@clerk/nextjs'
 const HeroSection = () => {
   const imageref = useRef(null);
 
@@ -38,14 +39,19 @@ const HeroSection = () => {
 </p>
         </div>
         <div className="space-x-4">
-<Link href="/dashboard" className="px-8 py-2 bg-blue-600 text-white rounded inline-block text-lg">
-  Get Started
-</Link>
-
-
-
-
-    </div>
+          <SignedOut>
+            <SignInButton mode="modal" forceRedirectUrl="/dashboard" signUpForceRedirectUrl="/onboarding">
+              <button className="px-8 py-2 bg-blue-600 text-white rounded inline-block text-lg">
+                Get Started
+              </button>
+            </SignInButton>
+          </SignedOut>
+          <SignedIn>
+            <Link href="/dashboard" className="px-8 py-2 bg-blue-600 text-white rounded inline-block text-lg">
+              Get Started
+            </Link>
+          </SignedIn>
+        </div>
     <div className='  hero-image-wrapper mt-5 md:mt-0 '>
       <div ref={imageref} className='hero-image pb-8'>
         <Image

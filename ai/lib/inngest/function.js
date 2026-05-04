@@ -1,13 +1,15 @@
+// ...existing code...
 import { db } from "@/lib/inngest/prisma";
 import { inngest } from "./client";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenAI } from "@google/genai";
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+// Use fixed model only (no process.env)
+const ai = new GoogleGenAI({});
+const MODEL = "gemini-3-flash-preview";
 
 export const generateIndustryInsights = inngest.createFunction(
   { name: "Generate Industry Insights" },
-  { cron: "0 0 * * 0" }, 
+  { cron: "0 0 * * 0" },
   async ({ event, step }) => {
     const industries = await step.run("Fetch industries", async () => {
       return await db.industryInsight.findMany({
@@ -36,29 +38,58 @@ export const generateIndustryInsights = inngest.createFunction(
           Include at least 5 skills and trends.
         `;
 
-      const res = await step.ai.wrap(
-        "gemini",
-        async (p) => {
-          return await model.generateContent(p);
-        },
-        prompt
-      );
-
-      const text = res.response.candidates[0].content.parts[0].text || "";
-      const cleanedText = text.replace(/```(?:json)?\n?/g, "").trim();
-
-      const insights = JSON.parse(cleanedText);
-
-      await step.run(`Update ${industry} insights`, async () => {
-        await db.industryInsight.update({
-          where: { industry },
-          data: {
-            ...insights,
-            lastUpdated: new Date(),
-            nextUpdate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-          },
+      try {
+        // Use GoogleGenAI client like your example
+        const res = await ai.models.generateContent({
+          model: MODEL,
+          contents: prompt,
         });
-      });
+
+        // Support multiple response shapes from different SDK versions
+        let raw = "";
+        if (typeof res?.text === "string" && res.text.trim()) {
+          raw = res.text;
+        } else if (res?.response && typeof res.response.text === "function") {
+          raw = await res.response.text();
+        } else if (res?.response?.candidates?.[0]?.content?.parts?.[0]?.text) {
+          raw = res.response.candidates[0].content.parts[0].text;
+        } else {
+          raw = String(res?.response ?? "");
+        }
+
+        const cleanedText = String(raw || "")
+          .replace(/```(?:json)?\n?|```/g, "")
+          .trim();
+
+        let insights;
+        try {
+          insights = JSON.parse(cleanedText);
+        } catch (err) {
+          console.error(
+            `Failed to parse insights JSON for ${industry}:`,
+            err,
+            "raw:",
+            cleanedText,
+          );
+          continue; // skip this industry and proceed
+        }
+
+        await step.run(`Update ${industry} insights`, async () => {
+          await db.industryInsight.update({
+            where: { industry },
+            data: {
+              ...insights,
+              lastUpdated: new Date(),
+              nextUpdate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+            },
+          });
+        });
+      } catch (err) {
+        console.error(`AI generation failed for ${industry}:`, err);
+        // continue to next industry without throwing to keep cron resilient
+        continue;
+      }
     }
-  }
+  },
 );
+// ...existing code...

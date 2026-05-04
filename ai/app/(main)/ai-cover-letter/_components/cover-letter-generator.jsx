@@ -38,6 +38,7 @@ export default function CoverLetterGenerator() {
     loading: generating,
     fn: generateLetterFn,
     data: generatedLetter,
+    error: generationError,
   } = useFetch(generateCoverLetter);
 
   // Update content when letter is generated
@@ -67,6 +68,17 @@ export default function CoverLetterGenerator() {
           </CardDescription>
         </CardHeader>
         <CardContent>
+          {generationError && (
+            <div
+              role="alert"
+              className="mb-4 rounded-md border border-red-500/50 bg-red-500/10 p-3 text-sm text-red-600 dark:text-red-400"
+            >
+              <p className="font-medium">Cover letter generation failed</p>
+              <p className="mt-1 break-words">
+                {generationError.message || "Unknown error"}
+              </p>
+            </div>
+          )}
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             {/* Form fields remain the same */}
             <div className="grid grid-cols-2 gap-4">

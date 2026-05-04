@@ -1,30 +1,46 @@
+// ...existing code...
 "use server";
 
 import { db } from "@/lib/inngest/prisma";
 import { auth } from "@clerk/nextjs/server";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenAI } from "@google/genai";
 
-// Validate API key early
-if (!process.env.GEMINI_API_KEY) {
-  throw new Error("GEMINI_API_KEY is not defined in environment variables");
-}
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-
-// Use latest stable model
-
-const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
+// Use fixed model only (no process.env)
+const ai = new GoogleGenAI({});
+const MODEL = "gemini-3-flash-preview";
 
 // Utility: safely extract JSON from Gemini response
 function extractJSON(text) {
   try {
-    const match = text.match(/\{[\s\S]*\}/);
+    const trimmed = String(text || "").trim();
+    if (!trimmed) return null;
+    // Try direct parse first (AI may return only JSON)
+    if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+      return JSON.parse(trimmed);
+    }
+    // Fallback: find first JSON object/array in text
+    const objMatch = trimmed.match(/\{[\s\S]*\}/);
+    const arrMatch = trimmed.match(/\[[\s\S]*\]/);
+    const match = objMatch || arrMatch;
     if (!match) return null;
     return JSON.parse(match[0]);
   } catch (err) {
     console.error("JSON parsing failed:", err);
     return null;
   }
+}
+
+// Normalize different SDK response shapes to a text string
+async function extractTextFromResponse(res) {
+  if (!res) return "";
+  if (typeof res?.text === "string" && res.text.trim()) return res.text;
+  if (res?.response && typeof res.response.text === "function") {
+    return String(await res.response.text());
+  }
+  if (res?.response?.candidates?.[0]?.content?.parts?.[0]?.text) {
+    return String(res.response.candidates[0].content.parts[0].text);
+  }
+  return String(res?.response ?? "");
 }
 
 // ------------------- GENERATE QUIZ -------------------
@@ -66,12 +82,15 @@ STRICTLY return ONLY valid JSON in this format:
 `;
 
   try {
-    const result = await model.generateContent(prompt);
-    const text = result.response.text();
+    const res = await ai.models.generateContent({
+      model: MODEL,
+      contents: prompt,
+    });
 
+    const text = await extractTextFromResponse(res);
     const quiz = extractJSON(text);
 
-    if (!quiz || !quiz.questions) {
+    if (!quiz || !Array.isArray(quiz.questions)) {
       console.error("Invalid Gemini response:", text);
       throw new Error("Invalid quiz format from AI");
     }
@@ -97,7 +116,7 @@ export async function saveQuizResult(questions, answers, score) {
   const questionResults = questions.map((q, index) => ({
     question: q.question,
     answer: q.correctAnswer,
-    userAnswer: answers[index],
+    userAnswer: answers[index] ?? null,
     isCorrect: q.correctAnswer === answers[index],
     explanation: q.explanation,
   }));
@@ -110,7 +129,7 @@ export async function saveQuizResult(questions, answers, score) {
     const wrongQuestionsText = wrongAnswers
       .map(
         (q) =>
-          `Question: "${q.question}"\nCorrect: "${q.answer}"\nUser: "${q.userAnswer}"`
+          `Question: "${q.question}"\nCorrect: "${q.answer}"\nUser: "${q.userAnswer}"`,
       )
       .join("\n\n");
 
@@ -124,8 +143,12 @@ Be encouraging and focus on what to study next.
 `;
 
     try {
-      const tipResult = await model.generateContent(improvementPrompt);
-      improvementTip = tipResult.response.text().trim();
+      const tipRes = await ai.models.generateContent({
+        model: MODEL,
+        contents: improvementPrompt,
+      });
+      const tipText = await extractTextFromResponse(tipRes);
+      improvementTip = String(tipText || "").trim();
     } catch (error) {
       console.error("Tip generation failed:", error);
       // don't break flow
@@ -175,3 +198,4 @@ export async function getAssessments() {
     throw new Error("Failed to fetch assessments");
   }
 }
+// ...existing code...

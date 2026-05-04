@@ -87,7 +87,7 @@ const Header = async() => {
           <div className="top-4 flex items-center">
             <SignedOut>
            
-            <SignInButton> 
+            <SignInButton mode="modal">
               <Button variant="outline">
                  Sign In
               </Button>

@@ -4,7 +4,6 @@ import { db } from "@/lib/inngest/prisma";
 import { auth } from "@clerk/nextjs/server";
 import { generateAIInsights } from "./dashboard";
 
-
 export async function updateuser(data) {
   const { userId } = await auth();
   if (!userId) throw new Error("Unauthorized");
@@ -27,16 +26,12 @@ export async function updateuser(data) {
             industry: data.industry,
           },
         });
-    
+
         if (!industryInsight) {
           const aiGenerated = await generateAIInsights(data.industry);
           if (!aiGenerated) {
             throw new Error("generateAIInsights returned null or undefined");
           }
-          console.log("generated here",aiGenerated);
-          
-    
-         
           industryInsight = await tx.industryInsights.create({
             data: {
               industry: data.industry,
@@ -45,17 +40,14 @@ export async function updateuser(data) {
               nextUpdate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 1 week later
               topSkills: aiGenerated.topSkills ?? [],
               keyTrends: aiGenerated.keyTrends ?? [],
-              marketOutlook: aiGenerated.marketOutlook?.toUpperCase() ?? "NEUTRAL", // must match enum
+              marketOutlook:
+                aiGenerated.marketOutlook?.toUpperCase() ?? "NEUTRAL", // must match enum
               recommendedSkills: aiGenerated.recommendedSkills ?? [],
               salaryRanges: aiGenerated.salaryRanges ?? [],
             },
           });
-          
-          
-          
-          
         }
-    
+
         const updateduser = await tx.user.update({
           where: {
             id: user.id,
@@ -69,27 +61,24 @@ export async function updateuser(data) {
               : data.skills?.split(",").map((skill) => skill.trim()),
           },
         });
-    
+
         return { updateduser, industryInsight };
       },
-      { timeout: 10000 }
+      { timeout: 100000 },
     );
 
     if (!result || typeof result !== "object") {
       throw new Error("Transaction result is invalid");
     }
 
-  
-   
-   
     return {
       success: true,
       updateduser: result.updateduser,
       industryInsight: result.industryInsight,
     };
   } catch (error) {
- console.log("kskskskkslvda");
- 
+    console.log("kskskskkslvda");
+
     return { success: false, error: error.message };
   }
 }

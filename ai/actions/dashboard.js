@@ -1,11 +1,13 @@
+// ...existing code...
 "use server";
 
 import { db } from "@/lib/inngest/prisma";
 import { auth } from "@clerk/nextjs/server";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenAI } from "@google/genai";
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+// The client gets the API key from the environment variable `GEMINI_API_KEY`.
+const ai = new GoogleGenAI({});
+const MODEL = "gemini-3-flash-preview";
 
 export const generateAIInsights = async (industry) => {
   const prompt = `
@@ -36,42 +38,78 @@ export const generateAIInsights = async (industry) => {
     - Do not return empty arrays.
   `;
 
+  const res = await ai.models.generateContent({
+    model: MODEL,
+    contents: prompt,
+  });
 
-  const result = await model.generateContent(prompt);
+  // Normalize different SDK response shapes
+  let raw = "";
+  if (typeof res?.text === "string" && res.text.trim()) {
+    raw = res.text;
+  } else if (res?.response && typeof res.response.text === "function") {
+    raw = await res.response.text();
+  } else if (res?.response?.candidates?.[0]?.content?.parts?.[0]?.text) {
+    raw = res.response.candidates[0].content.parts[0].text;
+  } else {
+    raw = String(res?.response ?? "");
+  }
 
-  const text = result.response.text();
-  const cleanedText = text.replace(/```(?:json)?\n?|```/g, "").trim();
-
-  // console.log("🧠 Gemini raw response:", cleanedText);
+  const cleanedText = String(raw || "")
+    .replace(/```(?:json)?\n?|```/g, "")
+    .trim();
 
   let insights;
-
   try {
     insights = JSON.parse(cleanedText);
   } catch (err) {
-    console.error("❌ Failed to parse JSON:", err);
+    console.error(
+      "❌ Failed to parse JSON from AI for industry",
+      industry,
+      err,
+      "raw:",
+      cleanedText,
+    );
     throw new Error("AI returned invalid JSON");
   }
 
-  // 🔒 Enforce growthRate is a valid number
+  // Ensure growthRate is a valid positive number
   if (typeof insights.growthRate === "string") {
-    insights.growthRate = parseFloat(insights.growthRate.replace("%", "").trim());
+    insights.growthRate = parseFloat(
+      insights.growthRate.replace("%", "").trim(),
+    );
   }
   if (
     typeof insights.growthRate !== "number" ||
     isNaN(insights.growthRate) ||
-    insights.growthRate <= 0
+    insights.growthRate === 0
   ) {
     console.warn("⚠️ Missing or invalid growthRate. Setting default 5.0");
     insights.growthRate = 5.0;
   }
 
-  // console.log("✅ Final cleaned insights object:", insights);
+  // Ensure arrays are not empty
+  insights.salaryRanges =
+    Array.isArray(insights.salaryRanges) && insights.salaryRanges.length
+      ? insights.salaryRanges
+      : [];
+  insights.topSkills =
+    Array.isArray(insights.topSkills) && insights.topSkills.length
+      ? insights.topSkills
+      : [];
+  insights.keyTrends =
+    Array.isArray(insights.keyTrends) && insights.keyTrends.length
+      ? insights.keyTrends
+      : [];
+  insights.recommendedSkills =
+    Array.isArray(insights.recommendedSkills) &&
+    insights.recommendedSkills.length
+      ? insights.recommendedSkills
+      : [];
 
   return insights;
 };
 
-  
 export async function getIndustryInsights() {
   const { userId } = await auth();
   if (!userId) throw new Error("Unauthorized");
@@ -79,18 +117,18 @@ export async function getIndustryInsights() {
   const user = await db.user.findUnique({
     where: { clerkUserId: userId },
   });
-  
+
   if (!user) throw new Error("User not found");
   if (!user.industry) throw new Error("User has no industry selected");
-  
+
   let industryInsight = await db.industryInsights.findUnique({
     where: { industry: user.industry },
   });
-  
+
   if (!industryInsight) {
     const insights = await generateAIInsights(user.industry);
     console.log("🧠 New AI-generated insights:", insights);
-  
+
     industryInsight = await db.industryInsights.create({
       data: {
         industry: user.industry,
@@ -99,8 +137,7 @@ export async function getIndustryInsights() {
       },
     });
   }
-  
-  return industryInsight;
-  
-}
 
+  return industryInsight;
+}
+// ...existing code...
